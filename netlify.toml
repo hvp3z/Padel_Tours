@@ -1,0 +1,17 @@
+[build]
+  command   = "npm run build"
+  publish   = ".next"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+[build.environment]
+  NODE_VERSION    = "20"
+  NEXT_TELEMETRY_DISABLED = "1"
+
+# Variables d'environnement à configurer sur le dashboard Netlify :
+#   DATABASE_URL      → URL PostgreSQL Supabase (postgresql://postgres:...@...supabase.co:5432/postgres)
+#   ADAPTERS_MODE     → "mock" pour tester, "live" une fois les adapters validés
+#   CACHE_TTL_SECONDS → 180
+#   DEFAULT_LAT       → 47.39414
+#   DEFAULT_LNG       → 0.68484

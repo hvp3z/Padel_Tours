@@ -1,0 +1,6 @@
+slug,name,address,postalCode,city,lat,lng,courtsCount,provider,externalId,bookingBaseUrl,notes
+casa-padel-tours,Casa Padel Tours,EXAMPLE - À VÉRIFIER,37000,Tours,47.394144,0.68484,4,playtomic,REPLACE_WITH_REAL_ID,https://playtomic.io/casa-padel-tours,Exemple - remplacer par les vraies données
+4padel-tours,4Padel Tours,EXAMPLE - À VÉRIFIER,37100,Tours,47.4258,0.6896,6,playtomic,REPLACE_WITH_REAL_ID,https://playtomic.io/4padel-tours,Exemple - remplacer par les vraies données
+tc-tours,Tennis Club de Tours,EXAMPLE - À VÉRIFIER,37000,Tours,47.3941,0.6890,2,doinsport,REPLACE_WITH_REAL_ID,https://tc-tours.doinsport.club,Exemple - remplacer par les vraies données
+padel-joue,Padel Joué-lès-Tours,EXAMPLE - À VÉRIFIER,37300,Joué-lès-Tours,47.3500,0.6700,3,anybuddy,REPLACE_WITH_REAL_ID,https://anybuddy.fr/padel-joue,Exemple - remplacer par les vraies données
+asptt-tours,ASPTT Tours,EXAMPLE - À VÉRIFIER,37200,Tours,47.4000,0.7100,2,custom,asptt-tours,https://www.asptt-tours.fr,Site custom - scraping nécessaire
