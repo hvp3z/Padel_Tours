@@ -1,8 +1,8 @@
 "use client";
 
-import { MapPin, Loader2 } from "lucide-react";
+import { MapPin, Loader2, Navigation } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState } from "react";
 import { todayIso, tomorrowIso } from "@/lib/utils";
 
 const DEFAULT_LAT = 47.39414;
@@ -15,41 +15,171 @@ const DURATION_OPTIONS = [
   { value: 120, label: "2h" },
 ] as const;
 
+type LocationMode = "default" | "geo" | "address";
+
+interface Suggestion {
+  display_name: string;
+  lat: string;
+  lon: string;
+}
+
 export function SearchForm() {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [geoStatus, setGeoStatus] = useState<"idle" | "locating" | "denied" | "ok">("idle");
+  const [isPending, setIsPending] = useState(false);
 
   const [lat, setLat] = useState(DEFAULT_LAT);
   const [lng, setLng] = useState(DEFAULT_LNG);
+  const [locationMode, setLocationMode] = useState<LocationMode>("default");
+  const [addressQuery, setAddressQuery] = useState("");
+  const [geoStatus, setGeoStatus] = useState<"idle" | "locating" | "ok" | "denied">("idle");
+  const [locationError, setLocationError] = useState<string | null>(null);
+
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [activeSuggestion, setActiveSuggestion] = useState(-1);
+  const [coordsFromSuggestion, setCoordsFromSuggestion] = useState<{ lat: number; lng: number } | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+
   const [radiusKm, setRadiusKm] = useState<(typeof RADIUS_OPTIONS)[number]>(15);
   const [date, setDate] = useState(todayIso());
   const [durationMinutes, setDurationMinutes] = useState<60 | 90 | 120>(90);
   const [startHour, setStartHour] = useState<number | "">("");
   const [endHour, setEndHour] = useState<number | "">("");
 
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const query = addressQuery.trim();
+    if (query.length < 3 || locationMode === "geo") {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      return;
+    }
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=fr&addressdetails=0`;
+        const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
+        if (!res.ok) return;
+        const data: Suggestion[] = await res.json();
+        setSuggestions(data);
+        setShowSuggestions(data.length > 0);
+        setActiveSuggestion(-1);
+      } catch {
+        // silently ignore network errors for autocomplete
+      }
+    }, 350);
+  }, [addressQuery, locationMode]);
+
+  function pickSuggestion(s: Suggestion) {
+    setAddressQuery(s.display_name);
+    setCoordsFromSuggestion({ lat: parseFloat(s.lat), lng: parseFloat(s.lon) });
+    setLocationMode("address");
+    setShowSuggestions(false);
+    setSuggestions([]);
+    setLocationError(null);
+  }
+
+  function handleAddressKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (!showSuggestions || suggestions.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveSuggestion((prev) => Math.min(prev + 1, suggestions.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveSuggestion((prev) => Math.max(prev - 1, 0));
+    } else if (e.key === "Enter" && activeSuggestion >= 0) {
+      e.preventDefault();
+      pickSuggestion(suggestions[activeSuggestion]);
+    } else if (e.key === "Escape") {
+      setShowSuggestions(false);
+    }
+  }
+
   function requestGeolocation() {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
       setGeoStatus("denied");
+      setLocationError("La géolocalisation n'est pas disponible sur ce navigateur.");
       return;
     }
     setGeoStatus("locating");
+    setLocationError(null);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
         setLat(pos.coords.latitude);
         setLng(pos.coords.longitude);
         setGeoStatus("ok");
+        setLocationMode("geo");
+        setAddressQuery("");
+        setLocationError(null);
       },
-      () => setGeoStatus("denied"),
+      () => {
+        setGeoStatus("denied");
+        setLocationError(null);
+      },
       { enableHighAccuracy: false, timeout: 8000, maximumAge: 60_000 },
     );
   }
 
-  function submit(e: React.FormEvent) {
+  function handleAddressChange(value: string) {
+    setAddressQuery(value);
+    setCoordsFromSuggestion(null);
+    if (value.trim()) {
+      setLocationMode("address");
+    } else {
+      setLocationMode("default");
+    }
+    setLocationError(null);
+    if (locationMode === "geo") {
+      setGeoStatus("idle");
+    }
+  }
+
+  async function geocodeAddress(query: string): Promise<{ lat: number; lng: number } | null> {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=fr`;
+    const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data || data.length === 0) return null;
+    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+  }
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
+    setLocationError(null);
+    setIsPending(true);
+
+    let finalLat = lat;
+    let finalLng = lng;
+
+    if (locationMode === "address" && addressQuery.trim()) {
+      if (coordsFromSuggestion) {
+        finalLat = coordsFromSuggestion.lat;
+        finalLng = coordsFromSuggestion.lng;
+      } else {
+        const coords = await geocodeAddress(addressQuery.trim());
+        if (!coords) {
+          setLocationError("Adresse introuvable. Essaie avec une ville ou un code postal.");
+          setIsPending(false);
+          return;
+        }
+        finalLat = coords.lat;
+        finalLng = coords.lng;
+      }
+    }
+
     const params = new URLSearchParams({
-      lat: lat.toString(),
-      lng: lng.toString(),
+      lat: finalLat.toString(),
+      lng: finalLng.toString(),
       radiusKm: radiusKm.toString(),
       date,
       durationMinutes: durationMinutes.toString(),
@@ -57,34 +187,88 @@ export function SearchForm() {
     if (startHour !== "") params.set("startHour", String(startHour));
     if (endHour !== "") params.set("endHour", String(endHour));
 
-    startTransition(() => {
-      router.push(`/results?${params.toString()}`);
-    });
+    router.push(`/results?${params.toString()}`);
+    setIsPending(false);
   }
+
+  const geoButtonLabel =
+    geoStatus === "locating"
+      ? "Localisation…"
+      : geoStatus === "ok"
+        ? "Position GPS détectée"
+        : geoStatus === "denied"
+          ? "GPS refusé — saisir une adresse"
+          : "Utiliser ma position GPS";
 
   return (
     <form onSubmit={submit} className="card flex flex-col gap-5">
+      {/* Location */}
       <div>
-        <label className="field-label">Où ?</label>
+        <label className="field-label" htmlFor="address">
+          Où ?
+        </label>
+        <div className="relative" ref={wrapperRef}>
+          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none z-10" />
+          <input
+            id="address"
+            type="text"
+            placeholder="Ville, adresse ou code postal…"
+            value={locationMode === "geo" ? "" : addressQuery}
+            onChange={(e) => handleAddressChange(e.target.value)}
+            onKeyDown={handleAddressKeyDown}
+            onFocus={() => suggestions.length > 0 && setShowSuggestions(true)}
+            readOnly={locationMode === "geo"}
+            autoComplete="off"
+            className="field-input pl-9"
+          />
+          {showSuggestions && suggestions.length > 0 && (
+            <ul className="absolute z-20 mt-1 w-full rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-lg overflow-hidden">
+              {suggestions.map((s, i) => (
+                <li
+                  key={i}
+                  onMouseDown={() => pickSuggestion(s)}
+                  className={`px-4 py-2.5 text-sm cursor-pointer truncate transition-colors ${
+                    i === activeSuggestion
+                      ? "bg-brand-50 dark:bg-brand-900/30 text-brand-700 dark:text-brand-300"
+                      : "hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200"
+                  }`}
+                >
+                  {s.display_name}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        {locationMode === "geo" && geoStatus === "ok" && (
+          <p className="text-xs text-brand-600 mt-1 flex items-center gap-1">
+            <Navigation className="h-3 w-3" />
+            Position GPS utilisée
+          </p>
+        )}
+        {locationMode === "default" && !addressQuery && (
+          <p className="text-xs text-slate-400 mt-1">
+            Centre de Tours utilisé par défaut
+          </p>
+        )}
+        {locationError && (
+          <p className="text-xs text-red-500 mt-1">{locationError}</p>
+        )}
         <button
           type="button"
           onClick={requestGeolocation}
-          className="btn-secondary w-full justify-start"
           disabled={geoStatus === "locating"}
+          className="mt-2 inline-flex items-center gap-1.5 text-xs text-brand-600 hover:text-brand-700 font-medium transition disabled:opacity-50"
         >
           {geoStatus === "locating" ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-3 w-3 animate-spin" />
           ) : (
-            <MapPin className="h-4 w-4" />
+            <Navigation className="h-3 w-3" />
           )}
-          {geoStatus === "ok"
-            ? `Position: ${lat.toFixed(4)}, ${lng.toFixed(4)}`
-            : geoStatus === "denied"
-              ? "Géoloc refusée — centre Tours utilisé"
-              : "Utiliser ma position"}
+          {geoButtonLabel}
         </button>
       </div>
 
+      {/* Radius */}
       <div>
         <label className="field-label">Rayon</label>
         <div className="grid grid-cols-3 gap-2">
@@ -105,16 +289,19 @@ export function SearchForm() {
         </div>
       </div>
 
+      {/* Date + Duration */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="field-label" htmlFor="date">Date</label>
-          <div className="flex gap-2 mb-2">
-            <button type="button" className="text-xs underline" onClick={() => setDate(todayIso())}>
-              Aujourd&apos;hui
-            </button>
-            <button type="button" className="text-xs underline" onClick={() => setDate(tomorrowIso())}>
-              Demain
-            </button>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="field-label mb-0" htmlFor="date">Date</label>
+            <div className="flex gap-2">
+              <button type="button" className="text-xs underline text-slate-500 dark:text-slate-400" onClick={() => setDate(todayIso())}>
+                Aujourd&apos;hui
+              </button>
+              <button type="button" className="text-xs underline text-slate-500 dark:text-slate-400" onClick={() => setDate(tomorrowIso())}>
+                Demain
+              </button>
+            </div>
           </div>
           <input
             id="date"
@@ -146,6 +333,7 @@ export function SearchForm() {
         </div>
       </div>
 
+      {/* Time window */}
       <div>
         <label className="field-label">Plage horaire (optionnel)</label>
         <div className="grid grid-cols-2 gap-3">

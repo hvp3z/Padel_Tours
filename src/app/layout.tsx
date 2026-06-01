@@ -13,7 +13,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#16a34a",
+  themeColor: "#2563eb",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
@@ -29,6 +29,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <h1 className="text-2xl font-bold tracking-tight">
               <span className="text-brand-600">●</span> Padel Tours
             </h1>
+            <div className="flex gap-0.5 mt-1 mb-1 w-16 h-0.5">
+              <span className="flex-1 bg-blue-800 rounded-full" />
+              <span className="flex-1 bg-white rounded-full opacity-60" />
+              <span className="flex-1 bg-red-500 rounded-full" />
+            </div>
             <p className="text-sm text-slate-600 dark:text-slate-400">
               Tous les créneaux dispos dans l&apos;agglo, en un coup d&apos;œil.
             </p>

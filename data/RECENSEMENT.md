@@ -1,5 +1,31 @@
 # Phase 0 — Recensement des clubs de padel de l'agglo Tours
 
+## Statut : ✅ Recensement initial terminé (mai 2026)
+
+**8 clubs recensés** dans `clubs.csv`. Voir tableau récapitulatif ci-dessous.
+
+| Club | Ville | Provider | ExternalId vérifié ? | Terrains |
+|---|---|---|---|---|
+| PadelShot Tours - La Ville-Aux-Dames | La Ville-aux-Dames | playtomic | ✅ API | 11 |
+| PadelShot Tours - St Pierre des Corps | Saint-Pierre-des-Corps | playtomic | ✅ API | 4 |
+| La Bulle Padel Club | Charentilly | doinsport | ✅ URL guid | 3 |
+| Association Tennis Grand Tours | Tours | anybuddy | ✅ API v1 | 3 |
+| Skinup Academy | Azay-le-Rideau | doinsport | ✅ URL guid | 4 |
+| Racket Park | Chargé | custom (Matchpoint) | n/a | 3 |
+| ~~Loire Raquettes Rochecorbon~~ | Rochecorbon | — | ❌ Pas de réservation en ligne | — |
+| Association Touraine Padel | Notre-Dame-d'Oé | custom (Padeligo) | n/a | 6 |
+
+*Terrains estimés pour Loire Raquettes (ouverture avril 2026, données à confirmer).
+
+### À faire avant de lancer `pnpm db:seed`
+
+1. ✅ ~~**Doinsport** — La Bulle Padel & Skinup Academy~~ : guids récupérés via les URLs de réservation
+2. ✅ ~~**Anybuddy** — ATGT~~ : centerId `at-grand-tours` confirmé via API v1
+3. ✅ ~~**Loire Raquettes**~~ : exclu — pas de réservation en ligne possible
+4. **Coordonnées GPS** : vérifier via Google Maps clic-droit pour les clubs custom si besoin
+
+---
+
 Ce document guide la collecte manuelle des données nécessaires pour seeder la base.
 
 ## Étape 1 — Trouver tous les clubs

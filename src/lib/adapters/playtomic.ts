@@ -1,40 +1,121 @@
-import { AdapterError, type AvailabilityRequest, type ProviderAdapter, type Slot } from "./types";
+import { fromZonedTime } from "date-fns-tz";
+import { AdapterError, type AvailabilityRequest, type Club, type ProviderAdapter, type Slot } from "./types";
 
-/**
- * Playtomic adapter.
- *
- * STATUT: STUB — à compléter en phase 1 du plan après reverse-engineering.
- *
- * Reverse-engineering attendu :
- * 1. Ouvrir l'app web Playtomic dans Chrome + DevTools Network (filtre XHR/Fetch)
- * 2. Naviguer sur un club + une date
- * 3. Identifier l'endpoint de disponibilité. Probable :
- *    GET https://playtomic.io/api/v1/availability?tenant_id={externalId}&local_start_min={ISO}&local_start_max={ISO}&sport_id=PADEL
- * 4. Récupérer le format exact de la réponse (courts, slots, prix)
- * 5. Identifier les headers requis (X-Requested-With, User-Agent, peut-être un token public)
- * 6. Compléter `fetchAvailability` ci-dessous
- *
- * Le code ci-dessous est le squelette qu'il suffit de compléter.
- */
+const PLAYTOMIC_API = "https://api.playtomic.io/v1";
+const DEFAULT_TIMEZONE = "Europe/Paris";
+
+export interface PlaytomicResourceMeta {
+  name: string;
+  surface?: "indoor" | "outdoor";
+}
+
+export interface PlaytomicAvailabilityResponse {
+  resource_id: string;
+  start_date: string;
+  slots: Array<{
+    start_time: string;
+    duration: number;
+    price?: string;
+  }>;
+}
+
+export interface PlaytomicTenantResponse {
+  tenant_id: string;
+  tenant_name: string;
+  address?: { timezone?: string };
+  resources?: Array<{
+    resource_id: string;
+    name: string;
+    sport_id: string;
+    properties?: { resource_type?: string };
+  }>;
+}
+
+export function parsePlaytomicPrice(price?: string): number | undefined {
+  if (!price) return undefined;
+  const match = price.match(/([\d.,]+)/);
+  if (!match) return undefined;
+  return Number.parseFloat(match[1].replace(",", "."));
+}
+
+export function mapResourceSurface(resourceType?: string): "indoor" | "outdoor" | undefined {
+  if (resourceType === "indoor" || resourceType === "outdoor") return resourceType;
+  return undefined;
+}
+
+export function buildResourceMap(tenant: PlaytomicTenantResponse): Map<string, PlaytomicResourceMeta> {
+  const map = new Map<string, PlaytomicResourceMeta>();
+  for (const resource of tenant.resources ?? []) {
+    if (resource.sport_id !== "PADEL") continue;
+    map.set(resource.resource_id, {
+      name: resource.name,
+      surface: mapResourceSurface(resource.properties?.resource_type),
+    });
+  }
+  return map;
+}
+
+export function formatPlaytomicLocalDay(date: Date): { min: string; max: string } {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, "0");
+  const d = String(date.getDate()).padStart(2, "0");
+  const day = `${y}-${m}-${d}`;
+  return { min: `${day}T00:00:00`, max: `${day}T23:59:59` };
+}
+
+export function parsePlaytomic(
+  data: PlaytomicAvailabilityResponse[],
+  club: Club,
+  requestedDuration: number,
+  resourceMap: Map<string, PlaytomicResourceMeta>,
+  timezone = DEFAULT_TIMEZONE,
+): Slot[] {
+  const slots: Slot[] = [];
+
+  for (const resource of data) {
+    const meta = resourceMap.get(resource.resource_id);
+    const courtName = meta?.name ?? `Court ${resource.resource_id.slice(0, 8)}`;
+
+    for (const slot of resource.slots) {
+      if (slot.duration !== requestedDuration) continue;
+
+      const localStart = `${resource.start_date}T${slot.start_time}`;
+      const startTime = fromZonedTime(localStart, timezone);
+      const endTime = new Date(startTime.getTime() + slot.duration * 60_000);
+
+      slots.push({
+        startTime,
+        endTime,
+        durationMinutes: slot.duration,
+        courtName,
+        surface: meta?.surface,
+        priceEur: parsePlaytomicPrice(slot.price),
+        bookingUrl: club.bookingBaseUrl,
+      });
+    }
+  }
+
+  return slots.sort((a, b) => a.startTime.getTime() - b.startTime.getTime());
+}
+
 export class PlaytomicAdapter implements ProviderAdapter {
   readonly name = "playtomic" as const;
-
-  private readonly baseUrl = "https://playtomic.io/api/v1";
 
   async getAvailability(req: AvailabilityRequest): Promise<Slot[]> {
     const { club, date, durationMinutes } = req;
 
     try {
-      const dayStart = new Date(date);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(date);
-      dayEnd.setHours(23, 59, 59, 999);
+      const tenant = await fetchTenant(club.externalId);
+      const timezone = tenant.address?.timezone ?? DEFAULT_TIMEZONE;
+      const resourceMap = buildResourceMap(tenant);
+      const { min, max } = formatPlaytomicLocalDay(date);
 
-      const url = new URL(`${this.baseUrl}/availability`);
+      const url = new URL(`${PLAYTOMIC_API}/availability`);
+      url.searchParams.set("user_id", "me");
       url.searchParams.set("tenant_id", club.externalId);
-      url.searchParams.set("local_start_min", dayStart.toISOString());
-      url.searchParams.set("local_start_max", dayEnd.toISOString());
       url.searchParams.set("sport_id", "PADEL");
+      url.searchParams.set("local_start_min", min);
+      url.searchParams.set("local_start_max", max);
 
       const res = await fetch(url.toString(), {
         headers: {
@@ -49,7 +130,7 @@ export class PlaytomicAdapter implements ProviderAdapter {
       }
 
       const data = (await res.json()) as PlaytomicAvailabilityResponse[];
-      return parsePlaytomic(data, club, durationMinutes);
+      return parsePlaytomic(data, club, durationMinutes, resourceMap, timezone);
     } catch (err) {
       if (err instanceof AdapterError) throw err;
       throw new AdapterError(this.name, club.slug, "fetch failed", err);
@@ -59,7 +140,14 @@ export class PlaytomicAdapter implements ProviderAdapter {
   async healthcheck() {
     const start = Date.now();
     try {
-      const res = await fetch(`${this.baseUrl}/tenants?size=1`, {
+      const url = new URL(`${PLAYTOMIC_API}/tenants`);
+      url.searchParams.set("coordinate", "47.39,0.69");
+      url.searchParams.set("radius", "10000");
+      url.searchParams.set("sport_id", "PADEL");
+      url.searchParams.set("size", "1");
+
+      const res = await fetch(url.toString(), {
+        headers: { Accept: "application/json" },
         signal: AbortSignal.timeout(5000),
       });
       return { ok: res.ok, latencyMs: Date.now() - start };
@@ -69,36 +157,18 @@ export class PlaytomicAdapter implements ProviderAdapter {
   }
 }
 
-interface PlaytomicAvailabilityResponse {
-  resource_id: string;
-  start_date: string;
-  slots: Array<{
-    start_time: string;
-    duration: number;
-    price?: string;
-  }>;
-}
+async function fetchTenant(tenantId: string): Promise<PlaytomicTenantResponse> {
+  const res = await fetch(`${PLAYTOMIC_API}/tenants/${tenantId}`, {
+    headers: {
+      Accept: "application/json",
+      "User-Agent": "padel-tours-aggregator/0.1 (+contact)",
+    },
+    signal: AbortSignal.timeout(8000),
+  });
 
-function parsePlaytomic(
-  data: PlaytomicAvailabilityResponse[],
-  club: import("./types").Club,
-  requestedDuration: number,
-): Slot[] {
-  const slots: Slot[] = [];
-  for (const resource of data) {
-    for (const slot of resource.slots) {
-      if (slot.duration !== requestedDuration) continue;
-      const start = new Date(`${resource.start_date}T${slot.start_time}`);
-      const end = new Date(start.getTime() + slot.duration * 60_000);
-      slots.push({
-        startTime: start,
-        endTime: end,
-        durationMinutes: slot.duration,
-        courtName: `Court ${resource.resource_id.slice(0, 6)}`,
-        priceEur: slot.price ? Number.parseFloat(slot.price) : undefined,
-        bookingUrl: `${club.bookingBaseUrl}?date=${resource.start_date}&time=${slot.start_time.slice(0, 5)}`,
-      });
-    }
+  if (!res.ok) {
+    throw new AdapterError("playtomic", tenantId, `tenant HTTP ${res.status}`);
   }
-  return slots;
+
+  return (await res.json()) as PlaytomicTenantResponse;
 }

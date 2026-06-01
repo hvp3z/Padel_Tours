@@ -1,4 +1,4 @@
-import { ExternalLink, Clock, AlertCircle, MapPin } from "lucide-react";
+import { ExternalLink, Clock, MapPin } from "lucide-react";
 import type { SearchResponse } from "@/lib/search";
 import { formatDistance, formatTime } from "@/lib/utils";
 
@@ -19,7 +19,6 @@ export function ResultsList({ data }: Props) {
 
   const clubsWithSlots = data.results.filter((r) => r.slots.length > 0);
   const clubsWithoutSlots = data.results.filter((r) => r.slots.length === 0 && !r.error);
-  const clubsWithErrors = data.results.filter((r) => r.error);
 
   return (
     <div className="space-y-4">
@@ -27,7 +26,7 @@ export function ResultsList({ data }: Props) {
         <span className="font-semibold text-slate-900 dark:text-slate-100">{data.totalSlots}</span>{" "}
         créneaux dispo dans{" "}
         <span className="font-semibold text-slate-900 dark:text-slate-100">{clubsWithSlots.length}</span>{" "}
-        clubs · {data.elapsedMs} ms
+        clubs
       </div>
 
       {clubsWithSlots.map((r) => (
@@ -90,21 +89,6 @@ export function ResultsList({ data }: Props) {
         </details>
       )}
 
-      {clubsWithErrors.length > 0 && (
-        <details className="card">
-          <summary className="cursor-pointer text-sm font-medium flex items-center gap-2 text-amber-700 dark:text-amber-400">
-            <AlertCircle className="h-4 w-4" />
-            {clubsWithErrors.length} clubs non joignables
-          </summary>
-          <ul className="mt-2 space-y-1 text-xs text-slate-600 dark:text-slate-400 font-mono">
-            {clubsWithErrors.map((r) => (
-              <li key={r.club.id}>
-                {r.club.name} ({r.club.provider}): {r.error}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
     </div>
   );
 }
