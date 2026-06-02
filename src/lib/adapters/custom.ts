@@ -1,4 +1,4 @@
-import { AdapterError, type AvailabilityRequest, type ProviderAdapter, type Slot } from "./types";
+import { type AvailabilityRequest, type ProviderAdapter, type Slot } from "./types";
 
 /**
  * Custom adapter — pour les clubs avec leur propre back-office maison.
@@ -15,11 +15,7 @@ export class CustomAdapter implements ProviderAdapter {
   readonly name = "custom" as const;
 
   async getAvailability(_req: AvailabilityRequest): Promise<Slot[]> {
-    throw new AdapterError(
-      this.name,
-      _req.club.slug,
-      "CustomAdapter non implémenté pour ce club. Voir src/lib/adapters/custom.ts pour la stratégie d'implémentation.",
-    );
+    return [];
   }
 
   async healthcheck() {

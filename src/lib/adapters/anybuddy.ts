@@ -76,6 +76,7 @@ function parseAnybuddy(
 ): Slot[] {
   const slots: Slot[] = [];
   for (const r of data.results) {
+    if (!r.courtName.toLowerCase().includes("padel")) continue;
     for (const ts of r.timeslots) {
       slots.push({
         startTime: new Date(ts.startsAt),

@@ -46,7 +46,6 @@ export function mapResourceSurface(resourceType?: string): "indoor" | "outdoor" 
 export function buildResourceMap(tenant: PlaytomicTenantResponse): Map<string, PlaytomicResourceMeta> {
   const map = new Map<string, PlaytomicResourceMeta>();
   for (const resource of tenant.resources ?? []) {
-    if (resource.sport_id !== "PADEL") continue;
     map.set(resource.resource_id, {
       name: resource.name,
       surface: mapResourceSurface(resource.properties?.resource_type),

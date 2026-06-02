@@ -3,7 +3,10 @@
 import { MapPin, Loader2, Navigation } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { isInCentreValDeLoire, nominatimRegionParams } from "@/lib/region";
 import { todayIso, tomorrowIso } from "@/lib/utils";
+
+const NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search";
 
 const DEFAULT_LAT = 47.39414;
 const DEFAULT_LNG = 0.68484;
@@ -67,12 +70,15 @@ export function SearchForm() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       try {
-        const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=fr&addressdetails=0`;
+        const url = `${NOMINATIM_BASE}?q=${encodeURIComponent(query)}&format=json&limit=5&countrycodes=fr&addressdetails=0&${nominatimRegionParams()}`;
         const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
         if (!res.ok) return;
         const data: Suggestion[] = await res.json();
-        setSuggestions(data);
-        setShowSuggestions(data.length > 0);
+        const inRegion = data.filter((s) =>
+          isInCentreValDeLoire(parseFloat(s.lat), parseFloat(s.lon)),
+        );
+        setSuggestions(inRegion);
+        setShowSuggestions(inRegion.length > 0);
         setActiveSuggestion(-1);
       } catch {
         // silently ignore network errors for autocomplete
@@ -145,12 +151,15 @@ export function SearchForm() {
   }
 
   async function geocodeAddress(query: string): Promise<{ lat: number; lng: number } | null> {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=fr`;
+    const url = `${NOMINATIM_BASE}?q=${encodeURIComponent(query)}&format=json&limit=1&countrycodes=fr&${nominatimRegionParams()}`;
     const res = await fetch(url, { headers: { "Accept-Language": "fr" } });
     if (!res.ok) return null;
     const data = await res.json();
     if (!data || data.length === 0) return null;
-    return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
+    const lat = parseFloat(data[0].lat);
+    const lng = parseFloat(data[0].lon);
+    if (!isInCentreValDeLoire(lat, lng)) return null;
+    return { lat, lng };
   }
 
   async function submit(e: React.FormEvent) {
@@ -168,12 +177,21 @@ export function SearchForm() {
       } else {
         const coords = await geocodeAddress(addressQuery.trim());
         if (!coords) {
-          setLocationError("Adresse introuvable. Essaie avec une ville ou un code postal.");
+          setLocationError(
+            "Adresse introuvable en Centre-Val de Loire. Essaie avec une ville ou un code postal de la région.",
+          );
           setIsPending(false);
           return;
         }
         finalLat = coords.lat;
         finalLng = coords.lng;
+      }
+      if (!isInCentreValDeLoire(finalLat, finalLng)) {
+        setLocationError(
+          "Cette adresse est hors Centre-Val de Loire. Choisis une ville ou un code postal de la région.",
+        );
+        setIsPending(false);
+        return;
       }
     }
 
@@ -212,7 +230,7 @@ export function SearchForm() {
           <input
             id="address"
             type="text"
-            placeholder="Ville, adresse ou code postal…"
+            placeholder="Ville ou code postal (Centre-Val de Loire)…"
             value={locationMode === "geo" ? "" : addressQuery}
             onChange={(e) => handleAddressChange(e.target.value)}
             onKeyDown={handleAddressKeyDown}

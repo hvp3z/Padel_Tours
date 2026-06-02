@@ -1,4 +1,4 @@
-import { ExternalLink, Clock, MapPin } from "lucide-react";
+import { ExternalLink, Clock, MapPin, ArrowRight } from "lucide-react";
 import type { SearchResponse } from "@/lib/search";
 import { formatDistance, formatTime } from "@/lib/utils";
 
@@ -82,7 +82,17 @@ export function ResultsList({ data }: Props) {
             {clubsWithoutSlots.map((r) => (
               <li key={r.club.id} className="flex items-center justify-between">
                 <span>{r.club.name}</span>
-                <span className="text-xs text-slate-500">{formatDistance(r.club.distanceMeters)}</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-slate-500">{formatDistance(r.club.distanceMeters)}</span>
+                  {r.club.provider === "custom" && (
+                    <a
+                      href="/"
+                      className="flex items-center gap-0.5 text-xs text-brand-700 dark:text-brand-300 hover:underline"
+                    >
+                      Chercher un créneau <ArrowRight className="h-3 w-3" />
+                    </a>
+                  )}
+                </div>
               </li>
             ))}
           </ul>
